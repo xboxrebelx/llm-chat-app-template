@@ -11,17 +11,120 @@ type GenerateRequest = {
   seed?: unknown;
 };
 
-type LooseAI = {
-  run(model: string, inputs: unknown): Promise<unknown>;
+type HordeEnv = Env & {
+  AI_HORDE_API_KEY?: string;
+  ASSETS?: Fetcher;
 };
 
-type ImageResult = {
-  image?: string;
+type HordeSubmitResponse = {
+  id?: string;
+  kudos?: number;
+  message?: string;
 };
 
-const MODEL = "@cf/black-forest-labs/flux-2-klein-9b";
+type HordeCheckResponse = {
+  done?: boolean;
+  faulted?: boolean;
+  cancelled?: boolean;
+  is_possible?: boolean;
+  wait_time?: number;
+  queue_position?: number;
+  processing?: number;
+  waiting?: number;
+  finished?: number;
+  message?: string;
+};
+
+type HordeGeneration = {
+  img?: string;
+  model?: string;
+  seed?: string | number;
+  censored?: boolean;
+  state?: string;
+  gen_metadata?: Array<{
+    type?: string;
+    value?: string;
+    ref?: string;
+  }>;
+};
+
+type HordeStatusResponse = {
+  done?: boolean;
+  faulted?: boolean;
+  cancelled?: boolean;
+  generations?: HordeGeneration[];
+  kudos?: number;
+  message?: string;
+};
+
+type HordeModel = {
+  name?: string;
+  count?: number;
+  performance?: number;
+  queued?: number;
+  jobs?: number;
+  eta?: number;
+};
+
+const HORDE_API = "https://aihorde.net/api/v2";
+const CLIENT_AGENT =
+  "DigitalAnarchist:1.0:https://github.com/xboxrebelx/llm-chat-app-template";
+
 const MAX_IMAGES = 5;
-const MAX_PROMPT_LENGTH = 2048;
+const MAX_PROMPT_LENGTH = 4096;
+const MAX_WAIT_MS = 4 * 60 * 1000;
+const DEFAULT_MODEL = "AlbedoBase XL (SDXL)";
+
+const PREFERRED_MODEL_PATTERNS: Array<{
+  pattern: RegExp;
+  score: number;
+}> = [
+  { pattern: /juggernaut.*xl/i, score: 1000 },
+  { pattern: /realvis.*xl/i, score: 950 },
+  { pattern: /albedo.*xl/i, score: 900 },
+  { pattern: /dreamshaper.*xl/i, score: 850 },
+  { pattern: /photon.*xl/i, score: 800 },
+  { pattern: /zavy.*xl/i, score: 760 },
+  { pattern: /sdxl/i, score: 600 },
+];
+
+const FALLBACK_NEGATIVE = [
+  "cgi",
+  "3d render",
+  "computer generated",
+  "digital art",
+  "illustration",
+  "painting",
+  "cartoon",
+  "anime",
+  "video game graphics",
+  "plastic skin",
+  "waxy skin",
+  "airbrushed skin",
+  "beauty filter",
+  "overprocessed",
+  "uncanny face",
+  "wrong age appearance",
+  "age body mismatch",
+  "face body mismatch",
+  "incorrect proportions",
+  "deformed anatomy",
+  "malformed hands",
+  "extra fingers",
+  "missing fingers",
+  "extra limbs",
+  "duplicate body parts",
+  "distorted eyes",
+  "asymmetrical eyes",
+  "blurred face",
+  "low resolution",
+  "soft focus",
+  "motion blur",
+  "text",
+  "caption",
+  "logo",
+  "watermark",
+].join(", ");
 
 function clampInteger(
   value: unknown,
@@ -50,6 +153,10 @@ function jsonResponse(data: unknown, status = 200): Response {
       "X-Content-Type-Options": "nosniff",
     },
   });
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function extractTypedAge(text: string): number | null {
@@ -118,7 +225,7 @@ function buildAgeAppearanceLock(age: number): string {
   ].join(" ");
 }
 
-function buildPrompt(body: GenerateRequest): string {
+function buildPositivePrompt(body: GenerateRequest): string {
   const originalPrompt =
     asText(body.originalPrompt) || asText(body.prompt);
 
@@ -169,45 +276,302 @@ function buildPrompt(body: GenerateRequest): string {
   );
 }
 
-async function generateOne(
-  env: Env,
-  prompt: string,
-  width: number,
-  height: number,
-  steps: number,
-): Promise<{ dataURI: string }> {
-  const form = new FormData();
-  form.append("prompt", prompt);
-  form.append("width", String(width));
-  form.append("height", String(height));
-  form.append("steps", String(steps));
+function buildNegativePrompt(body: GenerateRequest): string {
+  const supplied = asText(body.negativePrompt);
+  return supplied || FALLBACK_NEGATIVE;
+}
 
-  const serialized = new Response(form);
-  const contentType = serialized.headers.get("content-type");
+async function readJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
 
-  if (!serialized.body || !contentType) {
-    throw new Error("Could not serialize the image request.");
+  if (!response.ok) {
+    let detail = text;
+
+    try {
+      const parsed = JSON.parse(text) as {
+        message?: string;
+        error?: string;
+        errors?: unknown;
+      };
+
+      detail =
+        parsed.message ||
+        parsed.error ||
+        (parsed.errors ? JSON.stringify(parsed.errors) : text);
+    } catch {
+      // Keep the original response text.
+    }
+
+    throw new Error(
+      detail || `AI Horde request failed with status ${response.status}.`,
+    );
   }
 
-  const ai = env.AI as unknown as LooseAI;
-
-  const result = (await ai.run(MODEL, {
-    multipart: {
-      body: serialized.body,
-      contentType,
-    },
-  })) as ImageResult;
-
-  if (!result || typeof result.image !== "string" || result.image.length === 0) {
-    throw new Error("The image model returned no displayable image.");
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("AI Horde returned an invalid JSON response.");
   }
+}
 
+function hordeHeaders(apiKey: string): HeadersInit {
   return {
-    dataURI: `data:image/jpeg;base64,${result.image}`,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    apikey: apiKey,
+    "Client-Agent": CLIENT_AGENT,
   };
 }
 
-async function handleGenerate(request: Request, env: Env): Promise<Response> {
+function scoreModel(model: HordeModel): number {
+  const name = asText(model.name);
+  const workerCount = Math.max(0, Number(model.count) || 0);
+  const performance = Math.max(0, Number(model.performance) || 0);
+
+  let preference = 0;
+
+  for (const preferred of PREFERRED_MODEL_PATTERNS) {
+    if (preferred.pattern.test(name)) {
+      preference = Math.max(preference, preferred.score);
+    }
+  }
+
+  return preference + Math.min(workerCount, 100) * 8 + Math.min(performance, 500);
+}
+
+async function selectModel(apiKey: string): Promise<string> {
+  try {
+    const response = await fetch(
+      `${HORDE_API}/status/models?type=image`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          apikey: apiKey,
+          "Client-Agent": CLIENT_AGENT,
+        },
+      },
+    );
+
+    const models = await readJson<HordeModel[]>(response);
+
+    const candidates = models
+      .filter((model) => asText(model.name) && (Number(model.count) || 0) > 0)
+      .map((model) => ({
+        name: asText(model.name),
+        score: scoreModel(model),
+      }))
+      .filter((model) => model.score >= 600)
+      .sort((left, right) => right.score - left.score);
+
+    if (candidates.length > 0) {
+      return candidates[0].name;
+    }
+  } catch (error) {
+    console.warn("Could not load AI Horde model list:", error);
+  }
+
+  return DEFAULT_MODEL;
+}
+
+async function submitGeneration(
+  apiKey: string,
+  body: GenerateRequest,
+): Promise<{
+  requestId: string;
+  model: string;
+  width: number;
+  height: number;
+  steps: number;
+}> {
+  const imageCount = clampInteger(body.imageCount, 1, MAX_IMAGES, 1);
+  const guidance = clampInteger(body.guidance, 1, 30, 8);
+  const requestedSteps = clampInteger(body.steps, 1, 50, 30);
+  const steps = Math.min(40, Math.max(25, requestedSteps));
+  const seedText = asText(body.seed);
+  const seed =
+    seedText === ""
+      ? null
+      : clampInteger(body.seed, 0, 2147483647, 0);
+
+  const isSquare =
+    asText(body.aspectRatio).toLowerCase() === "square";
+
+  // 768x1152 is a true 2:3 portrait and matches many more volunteer GPUs
+  // than 1024x1536. Square remains 1024x1024.
+  const width = isSquare ? 1024 : 768;
+  const height = isSquare ? 1024 : 1152;
+
+  const positivePrompt = buildPositivePrompt(body);
+  const negativePrompt = buildNegativePrompt(body);
+  const model = await selectModel(apiKey);
+
+  const params: Record<string, unknown> = {
+    sampler_name: "k_dpmpp_2m",
+    cfg_scale: guidance,
+    steps,
+    width,
+    height,
+    n: imageCount,
+    karras: true,
+    hires_fix: false,
+    clip_skip: 1,
+  };
+
+  if (seed !== null) {
+    params.seed = String(seed);
+  }
+
+  const payload = {
+    prompt: `${positivePrompt} ### ${negativePrompt}`,
+    params,
+    models: [model],
+    nsfw: false,
+    censor_nsfw: false,
+    trusted_workers: false,
+    slow_workers: true,
+    r2: true,
+    shared: false,
+    replacement_filter: true,
+    allow_downgrade: true,
+  };
+
+  const response = await fetch(`${HORDE_API}/generate/async`, {
+    method: "POST",
+    headers: hordeHeaders(apiKey),
+    body: JSON.stringify(payload),
+  });
+
+  const submitted = await readJson<HordeSubmitResponse>(response);
+
+  if (!submitted.id) {
+    throw new Error(
+      submitted.message || "AI Horde did not return a generation request ID.",
+    );
+  }
+
+  return {
+    requestId: submitted.id,
+    model,
+    width,
+    height,
+    steps,
+  };
+}
+
+function pollDelayMilliseconds(check: HordeCheckResponse): number {
+  const waitSeconds = Number(check.wait_time);
+
+  if (Number.isFinite(waitSeconds) && waitSeconds > 0) {
+    return Math.min(8000, Math.max(2000, waitSeconds * 1000));
+  }
+
+  return 2500;
+}
+
+async function waitForGeneration(
+  apiKey: string,
+  requestId: string,
+): Promise<HordeStatusResponse> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < MAX_WAIT_MS) {
+    const checkResponse = await fetch(
+      `${HORDE_API}/generate/check/${encodeURIComponent(requestId)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          apikey: apiKey,
+          "Client-Agent": CLIENT_AGENT,
+        },
+      },
+    );
+
+    const check = await readJson<HordeCheckResponse>(checkResponse);
+
+    if (check.faulted) {
+      throw new Error(check.message || "AI Horde marked the request as faulted.");
+    }
+
+    if (check.cancelled) {
+      throw new Error("AI Horde cancelled the generation request.");
+    }
+
+    if (check.is_possible === false) {
+      throw new Error(
+        "No active AI Horde worker can currently run this request. Try again later.",
+      );
+    }
+
+    if (check.done) {
+      const statusResponse = await fetch(
+        `${HORDE_API}/generate/status/${encodeURIComponent(requestId)}`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            apikey: apiKey,
+            "Client-Agent": CLIENT_AGENT,
+          },
+        },
+      );
+
+      return readJson<HordeStatusResponse>(statusResponse);
+    }
+
+    await sleep(pollDelayMilliseconds(check));
+  }
+
+  throw new Error(
+    "AI Horde is still queued after four minutes. Try again when more volunteer workers are available.",
+  );
+}
+
+function normalizeGenerationImage(
+  generation: HordeGeneration,
+): { url?: string; dataURI?: string; model?: string; seed?: string | number } | null {
+  const image = asText(generation.img);
+
+  if (!image) return null;
+
+  const metadata = {
+    model: asText(generation.model) || undefined,
+    seed: generation.seed,
+  };
+
+  if (
+    image.startsWith("https://") ||
+    image.startsWith("http://") ||
+    image.startsWith("data:image/")
+  ) {
+    return image.startsWith("data:image/")
+      ? { dataURI: image, ...metadata }
+      : { url: image, ...metadata };
+  }
+
+  return {
+    dataURI: `data:image/webp;base64,${image}`,
+    ...metadata,
+  };
+}
+
+async function handleGenerate(
+  request: Request,
+  env: HordeEnv,
+): Promise<Response> {
+  const apiKey = asText(env.AI_HORDE_API_KEY);
+
+  if (!apiKey) {
+    return jsonResponse(
+      {
+        error:
+          "AI_HORDE_API_KEY is missing from Cloudflare Variables and Secrets.",
+      },
+      500,
+    );
+  }
+
   let body: GenerateRequest;
 
   try {
@@ -223,36 +587,53 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
     return jsonResponse({ error: "A prompt is required." }, 400);
   }
 
-  const imageCount = clampInteger(body.imageCount, 1, MAX_IMAGES, 3);
-  const isSquare = asText(body.aspectRatio).toLowerCase() === "square";
-  const width = 1024;
-  const height = isSquare ? 1024 : 1536;
-
-  const requestedSteps = clampInteger(body.steps, 1, 50, 25);
-  const steps = Math.min(40, Math.max(25, requestedSteps));
-  const prompt = buildPrompt(body);
-
   try {
-    const images = await Promise.all(
-      Array.from({ length: imageCount }, () =>
-        generateOne(env, prompt, width, height, steps),
-      ),
+    const submitted = await submitGeneration(apiKey, body);
+    const completed = await waitForGeneration(
+      apiKey,
+      submitted.requestId,
     );
+
+    if (completed.faulted) {
+      throw new Error(
+        completed.message || "AI Horde marked the completed request as faulted.",
+      );
+    }
+
+    if (completed.cancelled) {
+      throw new Error("AI Horde cancelled the generation request.");
+    }
+
+    const images = (completed.generations || [])
+      .map(normalizeGenerationImage)
+      .filter(
+        (
+          image,
+        ): image is NonNullable<ReturnType<typeof normalizeGenerationImage>> =>
+          image !== null,
+      );
+
+    if (images.length === 0) {
+      throw new Error("AI Horde returned no displayable images.");
+    }
 
     return jsonResponse({
       images,
-      model: MODEL,
-      width,
-      height,
-      steps,
+      provider: "AI Horde",
+      requestId: submitted.requestId,
+      selectedModel: submitted.model,
+      width: submitted.width,
+      height: submitted.height,
+      steps: submitted.steps,
+      kudos: completed.kudos,
     });
   } catch (error) {
-    console.error("Digital Anarchist generation error:", error);
+    console.error("Digital Anarchist AI Horde error:", error);
 
     const message =
       error instanceof Error
         ? error.message
-        : "Image generation failed.";
+        : "AI Horde image generation failed.";
 
     return jsonResponse({ error: message }, 500);
   }
@@ -260,21 +641,32 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request, env): Promise<Response> {
+    const hordeEnv = env as HordeEnv;
     const url = new URL(request.url);
 
-    if (request.method === "POST" && url.pathname === "/api/generate") {
-      return handleGenerate(request, env);
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/generate"
+    ) {
+      return handleGenerate(request, hordeEnv);
     }
 
-    if (request.method === "GET" && url.pathname === "/api/health") {
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/health"
+    ) {
       return jsonResponse({
         ok: true,
         service: "Digital Anarchist",
-        model: MODEL,
+        provider: "AI Horde",
+        apiKeyConfigured: Boolean(asText(hordeEnv.AI_HORDE_API_KEY)),
       });
     }
 
-    if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
+    if (
+      request.method === "OPTIONS" &&
+      url.pathname.startsWith("/api/")
+    ) {
       return new Response(null, {
         status: 204,
         headers: {
@@ -286,10 +678,8 @@ export default {
       });
     }
 
-    const assets = (env as Env & { ASSETS?: Fetcher }).ASSETS;
-
-    if (assets) {
-      return assets.fetch(request);
+    if (hordeEnv.ASSETS) {
+      return hordeEnv.ASSETS.fetch(request);
     }
 
     return new Response("Not found", { status: 404 });
