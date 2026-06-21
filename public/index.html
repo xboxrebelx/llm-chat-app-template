@@ -1,183 +1,496 @@
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>LLM Chat App</title>
-		<style>
-			:root {
-				--primary-color: #f6821f;
-				--primary-hover: #e67e22;
-				--light-bg: #f9fafb;
-				--border-color: #e5e7eb;
-				--text-color: #1f2937;
-				--text-light: #6b7280;
-				--user-msg-bg: #fff2e6;
-				--assistant-msg-bg: #f3f4f6;
-			}
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0d">
+  <title>Digital Anarchist</title>
+  <style>
+    :root{
+      --bg:#09090c;
+      --panel:#121218;
+      --panel-2:#181820;
+      --line:#2a2a35;
+      --text:#f4f4f7;
+      --muted:#a8a8b3;
+      --accent:#ff6a00;
+      --accent-2:#ff8a32;
+      --danger:#ff4d4d;
+      --shadow:0 14px 40px rgba(0,0,0,.34);
+      color-scheme:dark;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    body{
+      background:
+        radial-gradient(circle at 15% -10%,rgba(255,106,0,.10),transparent 35%),
+        radial-gradient(circle at 90% 0%,rgba(255,138,50,.07),transparent 28%),
+        var(--bg);
+    }
+    button,textarea,select,input{font:inherit}
+    button,select,input{min-height:46px}
+    .shell{width:min(980px,100%);margin:0 auto;padding:18px 14px 48px}
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      margin-bottom:16px;padding:14px 16px;border:1px solid var(--line);
+      border-radius:16px;background:rgba(18,18,24,.90);backdrop-filter:blur(10px);
+      box-shadow:var(--shadow)
+    }
+    .brand-wrap{min-width:0}
+    .brand{margin:0;font-size:clamp(1.45rem,5vw,2.25rem);line-height:1;font-weight:900;letter-spacing:.04em;text-transform:uppercase}
+    .sub{margin:7px 0 0;color:var(--muted);font-size:.88rem}
+    .mode-badge{
+      flex:0 0 auto;border:1px solid rgba(255,106,0,.55);border-radius:999px;
+      padding:8px 10px;color:#ffd2b5;background:rgba(255,106,0,.09);
+      font-size:.77rem;font-weight:800;white-space:nowrap
+    }
+    .panel{
+      border:1px solid var(--line);border-radius:16px;background:rgba(18,18,24,.92);
+      box-shadow:var(--shadow);padding:16px;margin-bottom:16px
+    }
+    label{display:block;margin-bottom:8px;font-size:.91rem;font-weight:800}
+    textarea{
+      width:100%;min-height:190px;resize:vertical;padding:15px;border-radius:13px;
+      border:1px solid #373743;background:#0d0d12;color:var(--text);line-height:1.45;
+      outline:none;transition:border-color .18s,box-shadow .18s
+    }
+    textarea:focus,select:focus,input:focus{
+      border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,106,0,.15)
+    }
+    textarea::placeholder{color:#747480}
+    .clear-btn{
+      width:100%;min-height:34px;margin-top:9px;border:1px solid #343440;
+      border-radius:9px;background:#17171e;color:#c9c9d0;font-size:.84rem;font-weight:750
+    }
+    .clear-btn:active{transform:translateY(1px)}
+    .controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:15px}
+    .field select,.field input{
+      width:100%;padding:0 12px;border:1px solid #373743;border-radius:11px;
+      background:#0d0d12;color:var(--text);outline:none
+    }
+    .advanced{
+      margin-top:12px;border:1px solid #2b2b35;border-radius:12px;background:#101016;
+      overflow:hidden
+    }
+    .advanced summary{
+      cursor:pointer;padding:12px 13px;color:#cfcfd6;font-size:.88rem;font-weight:800;
+      user-select:none
+    }
+    .advanced-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:0 12px 12px}
+    .advanced label{font-size:.77rem;color:var(--muted)}
+    .advanced input{min-height:42px}
+    .generate{
+      width:100%;margin-top:14px;border:0;border-radius:12px;padding:14px 18px;
+      color:white;background:linear-gradient(135deg,var(--accent),var(--accent-2));
+      font-weight:900;font-size:1rem;letter-spacing:.02em;box-shadow:0 10px 28px rgba(255,106,0,.24)
+    }
+    .generate:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+    .generate:not(:disabled):active{transform:translateY(1px)}
+    .status{
+      min-height:24px;margin:12px 2px 0;color:var(--muted);font-size:.87rem;
+      display:flex;align-items:center;gap:9px
+    }
+    .spinner{
+      width:16px;height:16px;border:2px solid #42424d;border-top-color:var(--accent);
+      border-radius:50%;animation:spin .75s linear infinite
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .gallery-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 11px}
+    .gallery-title{margin:0;font-size:1.08rem}
+    .count{color:var(--muted);font-size:.82rem}
+    .gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .image-card{
+      position:relative;overflow:hidden;border-radius:14px;border:1px solid var(--line);
+      background:#0d0d12;min-height:170px;box-shadow:0 10px 26px rgba(0,0,0,.25)
+    }
+    .image-card img{display:block;width:100%;height:100%;object-fit:cover;cursor:zoom-in}
+    .image-actions{
+      position:absolute;left:8px;right:8px;bottom:8px;display:flex;justify-content:flex-end;gap:7px;
+      opacity:0;transition:opacity .18s
+    }
+    .image-card:hover .image-actions,.image-card:focus-within .image-actions{opacity:1}
+    .image-action{
+      min-height:34px;border:1px solid rgba(255,255,255,.22);border-radius:9px;
+      background:rgba(10,10,14,.82);color:#fff;padding:6px 9px;font-size:.76rem;font-weight:800
+    }
+    .empty{
+      grid-column:1/-1;padding:28px 16px;border:1px dashed #30303b;border-radius:13px;
+      text-align:center;color:#777784;background:#0d0d12
+    }
+    .modal{
+      position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;
+      padding:18px;background:rgba(0,0,0,.92)
+    }
+    .modal.open{display:flex}
+    .modal img{max-width:100%;max-height:90vh;object-fit:contain;border-radius:10px}
+    .modal-close{
+      position:absolute;top:max(14px,env(safe-area-inset-top));right:14px;width:44px;height:44px;
+      border:1px solid rgba(255,255,255,.25);border-radius:50%;background:rgba(20,20,25,.8);
+      color:#fff;font-size:1.35rem;font-weight:900
+    }
+    .error{color:#ff8585}
+    .success{color:#8ee6a8}
+    .footer{padding:2px 4px;color:#666672;text-align:center;font-size:.75rem}
+    @media (max-width:600px){
+      .shell{padding:10px 10px 34px}
+      .topbar{padding:13px 12px}
+      .sub{font-size:.78rem}
+      .mode-badge{font-size:.68rem;padding:7px 8px}
+      .panel{padding:13px;border-radius:14px}
+      textarea{min-height:205px}
+      .gallery{grid-template-columns:1fr}
+      .image-card{min-height:260px}
+      .advanced-grid{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-wrap">
+        <h1 class="brand">Digital Anarchist</h1>
+        <p class="sub">Cloudflare Workers AI • realistic photography generator</p>
+      </div>
+      <div class="mode-badge">REAL PHOTO ONLY</div>
+    </header>
 
-			* {
-				box-sizing: border-box;
-				margin: 0;
-				padding: 0;
-			}
+    <section class="panel" aria-labelledby="prompt-label">
+      <label id="prompt-label" for="prompt">Main Prompt</label>
+      <textarea id="prompt" maxlength="2048" spellcheck="true" placeholder="Describe the exact photograph you want. Include subject, visible age, body type, clothing, pose, location, lighting, camera angle, and every required scene detail."></textarea>
+      <button id="clearPrompt" class="clear-btn" type="button">Clear Prompt</button>
 
-			body {
-				font-family:
-					-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-					Cantarell, sans-serif;
-				line-height: 1.6;
-				color: var(--text-color);
-				max-width: 800px;
-				margin: 0 auto;
-				padding: 1rem;
-			}
+      <div class="controls">
+        <div class="field">
+          <label for="aspectRatio">Aspect Ratio</label>
+          <select id="aspectRatio">
+            <option value="portrait">Portrait</option>
+            <option value="square">Square</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="imageCount">Image Count</label>
+          <select id="imageCount">
+            <option value="3">3</option>
+            <option value="1">1</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+      </div>
 
-			header {
-				text-align: center;
-				margin-bottom: 2rem;
-				padding: 1rem 0;
-				border-bottom: 1px solid var(--border-color);
-			}
+      <details class="advanced">
+        <summary>Advanced settings</summary>
+        <div class="advanced-grid">
+          <div class="field">
+            <label for="guidance">Guidance (1–30)</label>
+            <input id="guidance" type="number" min="1" max="30" step="1" value="8" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="steps">Steps (1–20)</label>
+            <input id="steps" type="number" min="1" max="20" step="1" value="20" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="seed">Seed (blank = random)</label>
+            <input id="seed" type="number" min="0" max="2147483647" step="1" inputmode="numeric" placeholder="Random">
+          </div>
+        </div>
+      </details>
 
-			h1 {
-				font-size: 1.5rem;
-				color: var(--primary-color);
-			}
+      <button id="generate" class="generate" type="button">Generate Images</button>
+      <div id="status" class="status" role="status" aria-live="polite">Ready.</div>
+    </section>
 
-			.chat-container {
-				display: flex;
-				flex-direction: column;
-				height: calc(100vh - 200px);
-				min-height: 400px;
-				border: 1px solid var(--border-color);
-				border-radius: 8px;
-				overflow: hidden;
-			}
+    <section class="panel">
+      <div class="gallery-head">
+        <h2 class="gallery-title">Gallery</h2>
+        <span id="galleryCount" class="count">0 images</span>
+      </div>
+      <div id="gallery" class="gallery">
+        <div class="empty">Generated images will appear here.</div>
+      </div>
+    </section>
 
-			.chat-messages {
-				flex: 1;
-				overflow-y: auto;
-				padding: 1rem;
-				background-color: var(--light-bg);
-			}
+    <div class="footer">Digital Anarchist • exact typed clothing only • no CGI styling</div>
+  </main>
 
-			.message {
-				margin-bottom: 1rem;
-				padding: 0.75rem;
-				border-radius: 8px;
-				max-width: 80%;
-			}
+  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-label="Fullscreen image">
+    <button id="modalClose" class="modal-close" type="button" aria-label="Close">×</button>
+    <img id="modalImage" alt="Generated image fullscreen">
+  </div>
 
-			.message p {
-				white-space: pre-line;
-				margin: 0;
-				overflow-wrap: anywhere;
-			}
+  <script>
+    (() => {
+      "use strict";
 
-			.user-message {
-				background-color: var(--user-msg-bg);
-				align-self: flex-end;
-				margin-left: auto;
-			}
+      const els = {
+        prompt: document.getElementById("prompt"),
+        clearPrompt: document.getElementById("clearPrompt"),
+        aspectRatio: document.getElementById("aspectRatio"),
+        imageCount: document.getElementById("imageCount"),
+        guidance: document.getElementById("guidance"),
+        steps: document.getElementById("steps"),
+        seed: document.getElementById("seed"),
+        generate: document.getElementById("generate"),
+        status: document.getElementById("status"),
+        gallery: document.getElementById("gallery"),
+        galleryCount: document.getElementById("galleryCount"),
+        modal: document.getElementById("modal"),
+        modalImage: document.getElementById("modalImage"),
+        modalClose: document.getElementById("modalClose")
+      };
 
-			.assistant-message {
-				background-color: var(--assistant-msg-bg);
-				align-self: flex-start;
-			}
+      const STORAGE_KEY = "digitalAnarchist.mainPrompt.v1";
+      const FIXED_NEGATIVE = [
+        "cgi","3d render","computer generated","digital art","illustration","painting","cartoon","anime",
+        "video game graphics","plastic skin","waxy skin","airbrushed skin","beauty filter","overprocessed",
+        "uncanny face","wrong age appearance","age body mismatch","face body mismatch","incorrect proportions",
+        "deformed anatomy","malformed hands","extra fingers","missing fingers","extra limbs","duplicate body parts",
+        "distorted eyes","asymmetrical eyes","blurred face","low resolution","soft focus","motion blur",
+        "text","caption","logo","watermark","stock photo watermark"
+      ].join(", ");
 
-			.message-input {
-				display: flex;
-				padding: 0.75rem;
-				border-top: 1px solid var(--border-color);
-				background-color: white;
-			}
+      function clampInt(value, min, max, fallback) {
+        const number = Number.parseInt(value, 10);
+        if (!Number.isFinite(number)) return fallback;
+        return Math.min(max, Math.max(min, number));
+      }
 
-			#user-input {
-				flex: 1;
-				padding: 0.75rem;
-				border: 1px solid var(--border-color);
-				border-radius: 4px;
-				font-family: inherit;
-				resize: none;
-				min-height: 44px;
-			}
+      function extractTypedAge(text) {
+        const patterns = [
+          /\b(?:age|aged|about|around|approximately|almost|nearly|just turned|looks about|most likely)\s*(\d{1,3})\b/i,
+          /\b(\d{1,3})\s*(?:years old|year old|yo)\b/i
+        ];
+        for (const pattern of patterns) {
+          const match = text.match(pattern);
+          if (match) {
+            const age = Number.parseInt(match[1], 10);
+            if (age >= 1 && age <= 100) return age;
+          }
+        }
+        return null;
+      }
 
-			#send-button {
-				margin-left: 0.5rem;
-				padding: 0 1rem;
-				background-color: var(--primary-color);
-				color: white;
-				border: none;
-				border-radius: 4px;
-				cursor: pointer;
-				transition: background-color 0.2s;
-			}
+      function splitRequiredDetails(text) {
+        return text
+          .split(/(?:\n+|[.;](?:\s+|$))/)
+          .map(part => part.trim())
+          .filter(Boolean)
+          .slice(0, 18);
+      }
 
-			#send-button:hover {
-				background-color: var(--primary-hover);
-			}
+      function compilePrompt(rawPrompt) {
+        const clean = rawPrompt.replace(/\s+/g, " ").trim();
+        const age = extractTypedAge(clean);
+        const details = splitRequiredDetails(rawPrompt);
 
-			#send-button:disabled {
-				background-color: var(--text-light);
-				cursor: not-allowed;
-			}
+        const requirements = details.length
+          ? details.map((detail, index) => `Required detail ${index + 1}: ${detail}.`).join(" ")
+          : `Required scene: ${clean}.`;
 
-			.typing-indicator {
-				display: none;
-				font-style: italic;
-				color: var(--text-light);
-				padding: 1rem;
-			}
+        const ageLock = age === null ? "" :
+          `The subject must visibly match ${age} in facial structure, body scale, height, proportions, anatomy, skin texture, hair distribution, and physical development stage. Do not make the subject look older or younger.`;
 
-			.typing-indicator.visible {
-				display: block;
-			}
+        return [
+          "Create one authentic real-world camera photograph, not artwork and not CGI.",
+          `Original user prompt: ${clean}.`,
+          requirements,
+          ageLock,
+          "Treat every explicitly typed person, object, action, pose, location, camera angle, lighting condition, and clothing item as mandatory.",
+          "Use only clothing and accessories explicitly stated by the user. Do not invent, replace, layer, or redesign wardrobe.",
+          "Maintain realistic human anatomy, gravity, joint placement, hand structure, facial geometry, body mass distribution, scale, perspective, and physical contact.",
+          "Natural unretouched skin with pores, fine texture, small imperfections, realistic hair strands, authentic eyes, and physically correct light response.",
+          "Captured as an exceptionally detailed high-end medium-format photograph with true optical depth, natural dynamic range, accurate color, realistic lens behavior, and believable environmental lighting.",
+          "No cinematic CGI look, no illustration, no synthetic materials, no artificial beauty-filter finish."
+        ].filter(Boolean).join(" ");
+      }
 
-			footer {
-				margin-top: 1rem;
-				text-align: center;
-				font-size: 0.85rem;
-				color: var(--text-light);
-			}
-		</style>
-	</head>
-	<body>
-		<header>
-			<h1>Cloudflare AI Chat</h1>
-			<p>Powered by Cloudflare Workers AI</p>
-		</header>
+      function setStatus(message, type = "") {
+        els.status.className = `status ${type}`.trim();
+        els.status.replaceChildren();
+        if (type === "loading") {
+          const spinner = document.createElement("span");
+          spinner.className = "spinner";
+          els.status.append(spinner);
+        }
+        els.status.append(document.createTextNode(message));
+      }
 
-		<div class="chat-container">
-			<div id="chat-messages" class="chat-messages">
-				<div class="message assistant-message">
-					<p>
-						Hello! I'm an LLM chat app powered by Cloudflare Workers AI. How can
-						I help you today?
-					</p>
-				</div>
-			</div>
+      function resetGallery() {
+        els.gallery.replaceChildren();
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "Generated images will appear here.";
+        els.gallery.append(empty);
+        els.galleryCount.textContent = "0 images";
+      }
 
-			<div class="typing-indicator" id="typing-indicator">
-				AI is thinking...
-			</div>
+      function normalizeImageValue(value) {
+        if (!value || typeof value !== "string") return null;
+        if (value.startsWith("data:image/") || value.startsWith("blob:") || /^https?:\/\//i.test(value)) return value;
+        return `data:image/jpeg;base64,${value}`;
+      }
 
-			<div class="message-input">
-				<textarea
-					id="user-input"
-					placeholder="Type your message here..."
-					rows="1"
-					autofocus
-				></textarea>
-				<button id="send-button">Send</button>
-			</div>
-		</div>
+      function collectImages(payload) {
+        const found = [];
+        const add = value => {
+          const normalized = normalizeImageValue(value);
+          if (normalized) found.push(normalized);
+        };
 
-		<footer>
-			<p>Cloudflare Workers AI Chat Template &copy; 2025</p>
-		</footer>
+        if (typeof payload === "string") add(payload);
+        if (!payload || typeof payload !== "object") return found;
 
-		<!-- Chat app script -->
-		<script src="chat.js"></script>
-	</body>
+        add(payload.dataURI);
+        add(payload.image);
+        add(payload.url);
+
+        for (const key of ["images", "results", "output"]) {
+          const list = payload[key];
+          if (!Array.isArray(list)) continue;
+          for (const item of list) {
+            if (typeof item === "string") add(item);
+            else if (item && typeof item === "object") {
+              add(item.dataURI);
+              add(item.image);
+              add(item.url);
+              add(item.base64);
+            }
+          }
+        }
+        return [...new Set(found)];
+      }
+
+      function showImage(src) {
+        els.modalImage.src = src;
+        els.modal.classList.add("open");
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeImage() {
+        els.modal.classList.remove("open");
+        els.modalImage.removeAttribute("src");
+        document.body.style.overflow = "";
+      }
+
+      function renderImages(images) {
+        els.gallery.replaceChildren();
+
+        images.forEach((src, index) => {
+          const card = document.createElement("article");
+          card.className = "image-card";
+
+          const image = document.createElement("img");
+          image.src = src;
+          image.alt = `Digital Anarchist generated image ${index + 1}`;
+          image.loading = "lazy";
+          image.addEventListener("click", () => showImage(src));
+
+          const actions = document.createElement("div");
+          actions.className = "image-actions";
+
+          const open = document.createElement("button");
+          open.className = "image-action";
+          open.type = "button";
+          open.textContent = "Fullscreen";
+          open.addEventListener("click", () => showImage(src));
+
+          actions.append(open);
+          card.append(image, actions);
+          els.gallery.append(card);
+        });
+
+        els.galleryCount.textContent = `${images.length} image${images.length === 1 ? "" : "s"}`;
+      }
+
+      async function generateImages() {
+        const rawPrompt = els.prompt.value.trim();
+        if (!rawPrompt) {
+          setStatus("Enter a prompt first.", "error");
+          els.prompt.focus();
+          return;
+        }
+
+        const imageCount = clampInt(els.imageCount.value, 1, 5, 3);
+        const guidance = clampInt(els.guidance.value, 1, 30, 8);
+        const steps = clampInt(els.steps.value, 1, 20, 20);
+        const seedText = els.seed.value.trim();
+        const seed = seedText === "" ? null : clampInt(seedText, 0, 2147483647, null);
+
+        localStorage.setItem(STORAGE_KEY, rawPrompt);
+        els.gallery.replaceChildren();
+        els.galleryCount.textContent = "0 images";
+        els.generate.disabled = true;
+        setStatus(`Generating ${imageCount} image${imageCount === 1 ? "" : "s"}…`, "loading");
+
+        try {
+          const response = await fetch("/api/generate", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              prompt: compilePrompt(rawPrompt),
+              originalPrompt: rawPrompt,
+              negativePrompt: FIXED_NEGATIVE,
+              aspectRatio: els.aspectRatio.value,
+              imageCount,
+              guidance,
+              steps,
+              seed
+            })
+          });
+
+          if (!response.ok) {
+            let detail = "";
+            try {
+              const errorPayload = await response.json();
+              detail = errorPayload?.error || errorPayload?.message || "";
+            } catch {
+              detail = await response.text();
+            }
+            throw new Error(detail || `Request failed with status ${response.status}`);
+          }
+
+          const contentType = response.headers.get("content-type") || "";
+          let images = [];
+
+          if (contentType.includes("application/json")) {
+            images = collectImages(await response.json());
+          } else if (contentType.startsWith("image/")) {
+            images = [URL.createObjectURL(await response.blob())];
+          } else {
+            images = collectImages(await response.text());
+          }
+
+          if (!images.length) throw new Error("The server returned no displayable images.");
+
+          renderImages(images);
+          setStatus(`Finished. ${images.length} image${images.length === 1 ? "" : "s"} generated.`, "success");
+        } catch (error) {
+          resetGallery();
+          setStatus(error instanceof Error ? error.message : "Image generation failed.", "error");
+        } finally {
+          els.generate.disabled = false;
+        }
+      }
+
+      els.prompt.value = localStorage.getItem(STORAGE_KEY) || "";
+      els.prompt.addEventListener("input", () => localStorage.setItem(STORAGE_KEY, els.prompt.value));
+
+      els.clearPrompt.addEventListener("click", () => {
+        els.prompt.value = "";
+        localStorage.removeItem(STORAGE_KEY);
+        els.prompt.focus();
+        setStatus("Prompt cleared.");
+      });
+
+      els.generate.addEventListener("click", generateImages);
+      els.modalClose.addEventListener("click", closeImage);
+      els.modal.addEventListener("click", event => {
+        if (event.target === els.modal) closeImage();
+      });
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape") closeImage();
+        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") generateImages();
+      });
+    })();
+  </script>
+</body>
 </html>
