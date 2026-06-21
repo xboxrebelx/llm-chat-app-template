@@ -256,8 +256,8 @@
 
       function extractTypedAge(text) {
         const patterns = [
-          /\b(?:age|aged|about|around|approximately|almost|nearly|just turned|looks about|most likely)\s*(\d{1,3})\b/i,
-          /\b(\d{1,3})\s*(?:years old|year old|yo)\b/i
+          /\b(?:age(?:d)?|exactly|about|around|approximately|almost|nearly|just turned|looks(?:\s+(?:exactly|about|around|approximately))?|appears(?:\s+to\s+be)?|most likely)\s*(\d{1,3})\b/i,
+          /\b(\d{1,3})\s*(?:years?\s*old|yo)\b/i
         ];
         for (const pattern of patterns) {
           const match = text.match(pattern);
@@ -287,13 +287,18 @@
           : `Required scene: ${clean}.`;
 
         const ageLock = age === null ? "" :
-          `The subject must visibly match ${age} in facial structure, body scale, height, proportions, anatomy, skin texture, hair distribution, and physical development stage. Do not make the subject look older or younger.`;
+          `The subject must visibly match exactly ${age} in facial structure, body scale, height, proportions, anatomy, skin texture, hair distribution, and physical development stage. Do not make the subject look older or younger than ${age}.`;
+
+        const fullBodyLock = /\b(?:full[-\s]?body|head[-\s]?to[-\s]?toe|entire body)\b/i.test(clean)
+          ? "Mandatory full-body framing: show the complete subject from the top of the head through both feet, with both feet fully visible inside the frame and comfortable space below them. Do not crop the head, hands, legs, ankles, shoes, or feet."
+          : "";
 
         return [
           "Create one authentic real-world camera photograph, not artwork and not CGI.",
           `Original user prompt: ${clean}.`,
           requirements,
           ageLock,
+          fullBodyLock,
           "Treat every explicitly typed person, object, action, pose, location, camera angle, lighting condition, and clothing item as mandatory.",
           "Use only clothing and accessories explicitly stated by the user. Do not invent, replace, layer, or redesign wardrobe.",
           "Maintain realistic human anatomy, gravity, joint placement, hand structure, facial geometry, body mass distribution, scale, perspective, and physical contact.",
