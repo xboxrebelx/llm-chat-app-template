@@ -52,42 +52,121 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+function extractTypedAge(text: string): number | null {
+  const patterns = [
+    /\b(?:age(?:d)?|exactly|about|around|approximately|almost|nearly|just turned|looks(?:\s+(?:exactly|about|around|approximately))?|appears(?:\s+to\s+be)?|most likely)\s*(\d{1,3})\b/i,
+    /\b(\d{1,3})\s*(?:years?\s*old|yo)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+
+    const age = Number.parseInt(match[1], 10);
+    if (age >= 1 && age <= 100) return age;
+  }
+
+  return null;
+}
+
+function buildAgeAppearanceLock(age: number): string {
+  const low = Math.max(1, age - 2);
+  const high = Math.min(100, age + 2);
+
+  let appearance = "";
+
+  if (age <= 5) {
+    appearance =
+      "young-child facial structure and child-sized body proportions, soft child features, and no adolescent or adult aging markers";
+  } else if (age <= 9) {
+    appearance =
+      "school-age child facial structure and body proportions, age-appropriate skin and hair, and no adolescent or adult aging markers";
+  } else if (age <= 12) {
+    appearance =
+      "preteen facial structure and body proportions, age-appropriate physical development, and no adult facial aging or adult facial hair";
+  } else if (age <= 17) {
+    appearance =
+      "adolescent facial structure and body proportions, age-appropriate physical development, smooth youthful skin, and no mature-adult aging markers";
+  } else if (age <= 24) {
+    appearance =
+      "young-adult facial structure, firm facial contours, smooth natural skin with realistic pores, and no mature age-related facial lines";
+  } else if (age <= 34) {
+    appearance =
+      "late-twenties to early-thirties adult facial structure, firm cheeks and jawline, natural skin texture, and only minimal fine expression lines";
+  } else if (age <= 39) {
+    appearance =
+      "unmistakable mid-thirties adult facial structure, firm cheeks and jawline, natural skin texture, subtle expression lines only, no pronounced forehead creases, no pronounced crow's feet, no jowling, and no age-related neck laxity";
+  } else if (age <= 49) {
+    appearance =
+      "adult facial structure consistent with the forties, natural mature skin texture, moderate realistic expression lines, and age-consistent hair and body proportions";
+  } else if (age <= 59) {
+    appearance =
+      "adult facial structure consistent with the fifties, natural mature skin texture, realistic facial lines, and age-consistent hair, hands, neck, and body proportions";
+  } else if (age <= 69) {
+    appearance =
+      "adult facial structure consistent with the sixties, naturally aged skin and hair, realistic facial lines, and age-consistent hands, neck, posture, and body proportions";
+  } else {
+    appearance =
+      "older-adult facial structure, naturally aged skin and hair, realistic age-related facial lines, and age-consistent hands, neck, posture, and body proportions";
+  }
+
+  return [
+    `AGE IS THE HIGHEST-PRIORITY IDENTITY ATTRIBUTE: the subject is exactly ${age} and must visibly appear within ${low}-${high}.`,
+    `Use ${appearance}.`,
+    "Keep the apparent age of the face, neck, hands, hair, skin, posture, and body fully consistent with one another.",
+    `Do not make the subject look noticeably older or younger than ${age}.`,
+  ].join(" ");
+}
+
 function buildPrompt(body: GenerateRequest): string {
   const originalPrompt =
     asText(body.originalPrompt) || asText(body.prompt);
 
-  const compiledPrompt = asText(body.prompt);
-  const aspectRatio =
-    asText(body.aspectRatio).toLowerCase() === "square"
-      ? "square"
-      : "portrait";
+  const age = extractTypedAge(originalPrompt);
+  const isSquare =
+    asText(body.aspectRatio).toLowerCase() === "square";
 
-  const aspectLock =
-    aspectRatio === "square"
-      ? "Compose the image as a true square 1:1 photograph with complete, intentional framing."
-      : "Compose the image as a true vertical portrait photograph in a 2:3 frame with complete, intentional framing.";
+  const aspectLock = isSquare
+    ? "FRAME: true square 1:1 camera photograph with complete intentional composition."
+    : "FRAME: true vertical 2:3 camera photograph with complete intentional composition.";
 
-  const realismLock = [
-    "Create a genuine real-world camera photograph.",
-    "Every person, visible age, body type, body size, height, weight distribution, facial structure, physical development stage, anatomy, pose, action, object, location, and relationship explicitly typed by the user is mandatory and must remain internally consistent.",
-    "Use only clothing and accessories explicitly typed by the user; do not invent, replace, layer, redesign, or automatically add wardrobe details.",
-    "Use realistic human proportions, joint placement, hands, fingers, eyes, skin texture, pores, fine hair, gravity, contact, perspective, scale, depth, and physically believable lighting.",
-    "Render natural high-end medium-format photographic detail, accurate color, authentic optical depth, realistic dynamic range, and believable lens behavior.",
-    "No CGI, no 3D render, no digital art, no illustration, no cartoon, no anime, no plastic skin, no waxy skin, no beauty-filter finish, no text, no logo, and no watermark.",
-  ].join(" ");
+  const fullBodyLock =
+    /\b(?:full[-\s]?body|head[-\s]?to[-\s]?toe|entire body|both feet visible)\b/i.test(
+      originalPrompt,
+    )
+      ? "FULL-BODY LOCK: position the camera far enough back to show the complete subject from the top of the head through both feet. Keep the head, hands, legs, ankles, and both feet fully inside the frame with visible floor space below the feet."
+      : "";
 
-  const source = compiledPrompt || originalPrompt;
+  const ageLock = age === null ? "" : buildAgeAppearanceLock(age);
 
-  // Put the user's exact wording first so it receives the strongest priority.
-  return [
-    `USER'S EXACT REQUIRED SCENE: ${originalPrompt}.`,
+  const fixedRequirements = [
+    ageLock,
     aspectLock,
-    realismLock,
-    source !== originalPrompt ? `Additional compiled requirements: ${source}` : "",
+    fullBodyLock,
+    "ADHERENCE: every explicitly typed person, object, action, pose, location, lighting condition, camera angle, body type, body size, and relationship is mandatory.",
+    "WARDROBE: use exactly the clothing and accessories explicitly typed by the user. Do not invent, replace, layer, redesign, or automatically add wardrobe items.",
+    "ANATOMY: realistic human proportions, joints, hands, fingers, eyes, facial geometry, body-mass distribution, gravity, contact, scale, and perspective.",
+    "PHOTO QUALITY: authentic high-end camera photograph with natural unretouched skin, visible pores and fine texture, individual hair strands, realistic eyes, physically believable light, accurate color, optical depth, and natural dynamic range.",
+    "STYLE EXCLUSIONS: no CGI appearance, no 3D-render appearance, no illustration, no cartoon, no anime, no plastic or waxy skin, no beauty-filter finish, no text, no logo, and no watermark.",
+    age === null
+      ? ""
+      : `FINAL AGE CHECK BEFORE RENDERING: the subject must read immediately as exactly ${age}, within the visible range ${Math.max(1, age - 2)}-${Math.min(100, age + 2)}.`,
   ]
     .filter(Boolean)
-    .join(" ")
-    .slice(0, MAX_PROMPT_LENGTH);
+    .join(" ");
+
+  const scenePrefix = "USER'S EXACT REQUIRED SCENE: ";
+  const reservedLength = scenePrefix.length + fixedRequirements.length + 3;
+  const availableSceneLength = Math.max(
+    300,
+    MAX_PROMPT_LENGTH - reservedLength,
+  );
+  const scene = originalPrompt.slice(0, availableSceneLength);
+
+  return `${scenePrefix}${scene}. ${fixedRequirements}`.slice(
+    0,
+    MAX_PROMPT_LENGTH,
+  );
 }
 
 async function generateOne(
@@ -110,8 +189,6 @@ async function generateOne(
     throw new Error("Could not serialize the image request.");
   }
 
-  // Loose typing keeps the project compatible even when the local generated
-  // Cloudflare model types lag behind the currently available model catalog.
   const ai = env.AI as unknown as LooseAI;
 
   const result = (await ai.run(MODEL, {
@@ -147,17 +224,12 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
   }
 
   const imageCount = clampInteger(body.imageCount, 1, MAX_IMAGES, 3);
-
-  // FLUX.2 Klein accepts explicit dimensions. Portrait uses a true 2:3 frame.
   const isSquare = asText(body.aspectRatio).toLowerCase() === "square";
   const width = 1024;
   const height = isSquare ? 1024 : 1536;
 
-  // Cloudflare's documented example uses 25 steps. Keep the UI value useful,
-  // but enforce a quality-focused minimum and a conservative upper bound.
   const requestedSteps = clampInteger(body.steps, 1, 50, 25);
   const steps = Math.min(40, Math.max(25, requestedSteps));
-
   const prompt = buildPrompt(body);
 
   try {
